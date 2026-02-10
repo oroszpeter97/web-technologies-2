@@ -169,6 +169,84 @@ async function start() {
       }
     });
 
+    // Delete the authenticated user's account (protected)
+    app.delete("/api/account", requireAuth, async (req, res) => {
+      const authHeader = req.header("Authorization");
+      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+
+      if (!token) {
+        return res.status(401).json({ message: "Missing token" });
+      }
+
+      if (!process.env.JWT_SECRET) {
+        return res.status(500).json({ message: "JWT secret not configured" });
+      }
+
+      try {
+        const payload = jwt.verify(token, process.env.JWT_SECRET) as jwt.JwtPayload;
+        const sub = payload?.sub as string | undefined;
+
+        if (!sub) {
+          return res.status(401).json({ message: "Invalid token" });
+        }
+
+        const users = getUserCollection(client);
+        const recipes = getRecipeCollection(client);
+        const userId = new ObjectId(sub);
+
+        await recipes.deleteMany({ ownerId: userId });
+        const result = await users.deleteOne({ _id: userId });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: "User not found" });
+        }
+
+        return res.status(200).json({ message: "Account deleted" });
+      } catch (err) {
+        console.error("Delete account error:", err);
+        return res.status(500).json({ message: "Account deletion failed" });
+      }
+    });
+
+    // Delete a recipe owned by the authenticated user (protected)
+    app.delete("/api/recipes/:id", requireAuth, async (req, res) => {
+      const authHeader = req.header("Authorization");
+      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+
+      if (!token) {
+        return res.status(401).json({ message: "Missing token" });
+      }
+
+      if (!process.env.JWT_SECRET) {
+        return res.status(500).json({ message: "JWT secret not configured" });
+      }
+
+      try {
+        const payload = jwt.verify(token, process.env.JWT_SECRET) as jwt.JwtPayload;
+        const sub = payload?.sub as string | undefined;
+
+        if (!sub) {
+          return res.status(401).json({ message: "Invalid token" });
+        }
+
+        const recipes = getRecipeCollection(client);
+        const ownerId = new ObjectId(sub);
+        const recipeIdParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const recipeId = new ObjectId(recipeIdParam);
+
+        const result = await recipes.deleteOne({ _id: recipeId, ownerId });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: "Recipe not found" });
+        }
+
+        return res.status(200).json({ message: "Recipe deleted" });
+      } catch (err) {
+        console.error("Delete recipe error:", err);
+        return res.status(500).json({ message: "Recipe deletion failed" });
+      }
+    });
+
     // Get all recipes (public)
     app.get("/api/recipes", async (_req, res) => {
       try {
