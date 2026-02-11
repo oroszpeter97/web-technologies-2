@@ -6,11 +6,13 @@ import { getRecipeCollection } from "./models/recipe";
 import { ObjectId } from "mongodb";
 import jwt = require("jsonwebtoken");
 import { randomUUID } from "crypto";
+import cors = require("cors");
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
+app.use(cors());
 
 const requireAuth: express.RequestHandler = (req, res, next) => {
   const authHeader = req.header("Authorization");

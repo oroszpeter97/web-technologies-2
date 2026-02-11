@@ -27,6 +27,8 @@ jsonwebtoken
 
 bycrypt
 
+cors
+
 ## Frontend
 typescript
 
