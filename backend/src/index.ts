@@ -169,6 +169,75 @@ async function start() {
       }
     });
 
+    // Patch a recipe owned by the authenticated user (protected)
+    app.patch("/api/recipes/:id", requireAuth, async (req, res) => {
+      const authHeader = req.header("Authorization");
+      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+
+      if (!token) {
+        return res.status(401).json({ message: "Missing token" });
+      }
+
+      if (!process.env.JWT_SECRET) {
+        return res.status(500).json({ message: "JWT secret not configured" });
+      }
+
+      const { title, description, ingredients, instructions } = req.body ?? {};
+      const update: Record<string, unknown> = {};
+
+      if (title !== undefined) update.title = title;
+      if (description !== undefined) update.description = description;
+      if (ingredients !== undefined) {
+        if (!Array.isArray(ingredients)) {
+          return res.status(400).json({ message: "Invalid ingredients" });
+        }
+        update.ingredients = ingredients;
+      }
+      if (instructions !== undefined) update.instructions = instructions;
+
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
+      }
+
+      try {
+        const payload = jwt.verify(token, process.env.JWT_SECRET) as jwt.JwtPayload;
+        const sub = payload?.sub as string | undefined;
+
+        if (!sub) {
+          return res.status(401).json({ message: "Invalid token" });
+        }
+
+        const recipes = getRecipeCollection(client);
+        const ownerId = new ObjectId(sub);
+        const recipeIdParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+        if (!ObjectId.isValid(recipeIdParam)) {
+          return res.status(400).json({ message: "Invalid recipe id" });
+        }
+
+        const recipeId = new ObjectId(recipeIdParam);
+
+        const updateResult = await recipes.updateOne(
+          { _id: recipeId, ownerId },
+          { $set: update }
+        );
+
+        if (updateResult.matchedCount === 0) {
+          return res.status(404).json({ message: "Recipe not found" });
+        }
+
+        const updated = await recipes.findOne({ _id: recipeId });
+        if (!updated) {
+          return res.status(500).json({ message: "Recipe update failed" });
+        }
+
+        return res.status(200).json(updated);
+      } catch (err) {
+        console.error("Patch recipe error:", err);
+        return res.status(500).json({ message: "Recipe update failed" });
+      }
+    });
+
     // Delete the authenticated user's account (protected)
     app.delete("/api/account", requireAuth, async (req, res) => {
       const authHeader = req.header("Authorization");
@@ -244,6 +313,25 @@ async function start() {
       } catch (err) {
         console.error("Delete recipe error:", err);
         return res.status(500).json({ message: "Recipe deletion failed" });
+      }
+    });
+
+    // Get a single recipe by id (public)
+    app.get("/api/recipes/:id", async (req, res) => {
+      try {
+        const recipes = getRecipeCollection(client);
+        const recipeIdParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const recipeId = new ObjectId(recipeIdParam);
+
+        const item = await recipes.findOne({ _id: recipeId });
+        if (!item) {
+          return res.status(404).json({ message: "Recipe not found" });
+        }
+
+        return res.status(200).json(item);
+      } catch (err) {
+        console.error("Get recipe error:", err);
+        return res.status(400).json({ message: "Invalid recipe id" });
       }
     });
 
